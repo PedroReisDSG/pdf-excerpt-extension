@@ -1,0 +1,31 @@
+# Bibliotecas de terceiros (devem ser baixadas separadamente)
+libs/
+
+# Icone PNG (gerado a partir do SVG)
+icons/*.png
+
+# Arquivos de build
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Dependencias do Node (se usar)
+node_modules/
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+
+# ZIP e arquivos compactados
+*.zip
+*.tar.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
