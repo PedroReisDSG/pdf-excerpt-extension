@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "PDF Excerpt Extractor",
+  "version": "1.0.0",
+  "description": "Visualizador de PDF com PDF.js que captura selecoes de texto e gera um novo PDF com os trechos destacados para fichamento academico.",
+  "author": "Desenvolvedor Web",
+  "homepage_url": "https://github.com/PedroReisDSG/pdf-excerpt-extension",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "downloads",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["viewer/*", "libs/*", "icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "48": "icons/icon-48.png"
+    },
+    "default_title": "PDF Excerpt Extractor"
+  },
+  "icons": {
+    "48": "icons/icon-48.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "pdf-excerpt-extractor@example.com",
+      "strict_min_version": "109.0"
+    },
+    "gecko_android": {
+      "strict_min_version": "109.0"
+    }
+  }
+}

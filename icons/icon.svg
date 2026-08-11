@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fundo -->
+  <rect width="48" height="48" rx="8" fill="#667eea"/>
+  
+  <!-- Icone de PDF -->
+  <g transform="translate(8, 8)">
+    <!-- Pagina -->
+    <path d="M4 0 L24 0 L32 8 L32 32 L4 32 Z" fill="white" opacity="0.95"/>
+    <path d="M24 0 L24 8 L32 8" fill="#667eea" opacity="0.3"/>
+    
+    <!-- Texto PDF -->
+    <text x="16" y="22" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#667eea" text-anchor="middle">PDF</text>
+    
+    <!-- Icone de selecao -->
+    <circle cx="26" cy="26" r="10" fill="#764ba2"/>
+    <path d="M22 26 L25 29 L30 23" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

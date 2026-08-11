@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visualizador de PDF - PDF Excerpt Extractor</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Barra de ferramentas superior -->
+    <header class="toolbar">
+      <div class="toolbar-left">
+        <h1 class="app-title">PDF Excerpt Extractor</h1>
+        <span id="fileName" class="file-name">Carregando...</span>
+      </div>
+      
+      <div class="toolbar-center">
+        <button id="prevPage" class="btn" title="Pagina anterior">Ant</button>
+        <span id="pageNumber" class="page-info">--</span>
+        <button id="nextPage" class="btn" title="Proxima pagina">Prox</button>
+        <input type="number" id="pageInput" class="page-input" min="1" value="1">
+        <span class="page-total">de <span id="pageCount">--</span></span>
+      </div>
+      
+      <div class="toolbar-right">
+        <button id="selectMode" class="btn btn-primary" title="Ativar/desativar modo de selecao">
+          Selecionar
+        </button>
+        <button id="clearSelections" class="btn btn-warning" title="Limpar todas as selecoes">
+          Limpar
+        </button>
+        <button id="exportPdf" class="btn btn-success" title="Exportar excertos para PDF">
+          Exportar PDF
+        </button>
+      </div>
+    </header>
+    
+    <!-- Area principal do visualizador -->
+    <main class="viewer-container">
+      <!-- Sidebar com excertos -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2>Excertos Selecionados</h2>
+          <span id="excerptCount" class="excerpt-count">0</span>
+        </div>
+        
+        <div id="excerptsList" class="excerpts-list">
+          <div class="empty-state">
+            <p>Selecione texto no PDF para adicionar excertos</p>
+            <p class="hint">Use o botao "Selecionar" para ativar o modo de captura</p>
+          </div>
+        </div>
+        
+        <div class="sidebar-footer">
+          <button id="exportTxt" class="btn btn-secondary" style="width: 100%;">
+            Exportar como TXT
+          </button>
+        </div>
+      </aside>
+      
+      <!-- Canvas do PDF -->
+      <div class="pdf-wrapper">
+        <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
+      </div>
+    </main>
+    
+    <!-- Modal de confirmacao -->
+    <div id="confirmModal" class="modal">
+      <div class="modal-content">
+        <h3>Confirmar Exportacao</h3>
+        <p id="modalMessage">Deseja exportar os excertos selecionados?</p>
+        <div class="modal-actions">
+          <button id="modalCancel" class="btn">Cancelar</button>
+          <button id="modalConfirm" class="btn btn-primary">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Scripts -->
+  <script src="../libs/pdf.min.js"></script>
+  <script src="../libs/pdf-lib.min.js"></script>
+  <script src="viewer.js" type="module"></script>
+</body>
+</html>

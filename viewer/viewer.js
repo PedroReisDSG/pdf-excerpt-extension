@@ -1,0 +1,554 @@
+// viewer.js - Logica principal do visualizador de PDF
+
+// Estado da aplicacao
+const state = {
+  pdfDoc: null,
+  currentPage: 1,
+  totalPages: 0,
+  scale: 1.5,
+  excerpts: [],
+  selectMode: false,
+  pdfUrl: '',
+  fileName: ''
+};
+
+// Elementos do DOM
+const elements = {
+  canvas: document.getElementById('pdfCanvas'),
+  ctx: document.getElementById('pdfCanvas').getContext('2d'),
+  fileName: document.getElementById('fileName'),
+  pageNumber: document.getElementById('pageNumber'),
+  pageCount: document.getElementById('pageCount'),
+  pageInput: document.getElementById('pageInput'),
+  prevPage: document.getElementById('prevPage'),
+  nextPage: document.getElementById('nextPage'),
+  selectMode: document.getElementById('selectMode'),
+  clearSelections: document.getElementById('clearSelections'),
+  exportPdf: document.getElementById('exportPdf'),
+  exportTxt: document.getElementById('exportTxt'),
+  excerptsList: document.getElementById('excerptsList'),
+  excerptCount: document.getElementById('excerptCount'),
+  confirmModal: document.getElementById('confirmModal'),
+  modalMessage: document.getElementById('modalMessage'),
+  modalCancel: document.getElementById('modalCancel'),
+  modalConfirm: document.getElementById('modalConfirm')
+};
+
+// Inicializacao
+async function init() {
+  console.log('[Viewer] Inicializando...');
+  
+  // Configura PDF.js worker
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '../libs/pdf.worker.min.js';
+  
+  // Obtem URL do PDF da query string
+  const params = new URLSearchParams(window.location.search);
+  state.pdfUrl = params.get('pdf');
+  
+  if (!state.pdfUrl) {
+    showError('Nenhum PDF especificado');
+    return;
+  }
+  
+  // Extrai nome do arquivo
+  state.fileName = state.pdfUrl.split('/').pop().split('?')[0].split('#')[0];
+  elements.fileName.textContent = state.fileName;
+  
+  console.log('[Viewer] Carregando PDF:', state.pdfUrl);
+  
+  try {
+    // Carrega o PDF
+    const loadingTask = pdfjsLib.getDocument(state.pdfUrl);
+    state.pdfDoc = await loadingTask.promise;
+    state.totalPages = state.pdfDoc.numPages;
+    
+    console.log('[Viewer] PDF carregado:', state.totalPages, 'paginas');
+    
+    // Atualiza UI
+    elements.pageCount.textContent = state.totalPages;
+    elements.pageInput.max = state.totalPages;
+    
+    // Renderiza primeira pagina
+    await renderPage(1);
+    
+    // Configura event listeners
+    setupEventListeners();
+    
+  } catch (error) {
+    console.error('[Viewer] Erro ao carregar PDF:', error);
+    showError('Erro ao carregar PDF: ' + error.message);
+  }
+}
+
+// Renderiza uma pagina do PDF
+async function renderPage(pageNum) {
+  if (!state.pdfDoc) return;
+  
+  const page = await state.pdfDoc.getPage(pageNum);
+  const viewport = page.getViewport({ scale: state.scale });
+  
+  elements.canvas.height = viewport.height;
+  elements.canvas.width = viewport.width;
+  
+  const renderContext = {
+    canvasContext: elements.ctx,
+    viewport: viewport
+  };
+  
+  await page.render(renderContext).promise;
+  
+  state.currentPage = pageNum;
+  elements.pageNumber.textContent = pageNum;
+  elements.pageInput.value = pageNum;
+  
+  console.log('[Viewer] Pagina', pageNum, 'renderizada');
+}
+
+// Configura event listeners
+function setupEventListeners() {
+  // Navegacao de paginas
+  elements.prevPage.addEventListener('click', () => {
+    if (state.currentPage > 1) {
+      renderPage(state.currentPage - 1);
+    }
+  });
+  
+  elements.nextPage.addEventListener('click', () => {
+    if (state.currentPage < state.totalPages) {
+      renderPage(state.currentPage + 1);
+    }
+  });
+  
+  elements.pageInput.addEventListener('change', (e) => {
+    const page = parseInt(e.target.value);
+    if (page >= 1 && page <= state.totalPages) {
+      renderPage(page);
+    } else {
+      e.target.value = state.currentPage;
+    }
+  });
+  
+  // Teclas de atalho
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    
+    if (e.key === 'ArrowLeft') {
+      elements.prevPage.click();
+    } else if (e.key === 'ArrowRight') {
+      elements.nextPage.click();
+    }
+  });
+  
+  // Modo de selecao
+  elements.selectMode.addEventListener('click', toggleSelectMode);
+  
+  // Captura selecao de texto
+  elements.canvas.addEventListener('mouseup', handleTextSelection);
+  
+  // Limpar excertos
+  elements.clearSelections.addEventListener('click', () => {
+    if (state.excerpts.length === 0) return;
+    
+    showModal('Tem certeza que deseja limpar todos os excertos?', () => {
+      state.excerpts = [];
+      updateExcerptsList();
+      saveExcerpts();
+    });
+  });
+  
+  // Exportar PDF
+  elements.exportPdf.addEventListener('click', () => {
+    if (state.excerpts.length === 0) {
+      alert('Nenhum excerto selecionado para exportar');
+      return;
+    }
+    
+    showModal('Exportar excertos para PDF?', exportToPdf);
+  });
+  
+  // Exportar TXT
+  elements.exportTxt.addEventListener('click', () => {
+    if (state.excerpts.length === 0) {
+      alert('Nenhum excerto selecionado para exportar');
+      return;
+    }
+    
+    exportToTxt();
+  });
+  
+  // Modal
+  elements.modalCancel.addEventListener('click', hideModal);
+  elements.modalConfirm.addEventListener('click', () => {
+    hideModal();
+    if (state.modalCallback) {
+      state.modalCallback();
+    }
+  });
+  
+  // Carrega excertos salvos
+  loadExcerpts();
+}
+
+// Alterna modo de selecao
+function toggleSelectMode() {
+  state.selectMode = !state.selectMode;
+  elements.selectMode.classList.toggle('btn-primary', state.selectMode);
+  elements.selectMode.textContent = state.selectMode ? 'Selecionando' : 'Selecionar';
+  
+  console.log('[Viewer] Modo selecao:', state.selectMode);
+}
+
+// Manipula selecao de texto no canvas
+async function handleTextSelection(e) {
+  if (!state.selectMode || !state.pdfDoc) return;
+  
+  try {
+    // Obtem texto da pagina atual
+    const page = await state.pdfDoc.getPage(state.currentPage);
+    const textContent = await page.getTextContent();
+    
+    // Filtra itens de texto
+    let selectedText = '';
+    textContent.items.forEach(item => {
+      if (item.str && item.str.trim()) {
+        selectedText += item.str + ' ';
+      }
+    });
+    
+    if (selectedText.trim()) {
+      addExcerpt(selectedText.trim(), state.currentPage);
+    }
+    
+  } catch (error) {
+    console.error('[Viewer] Erro ao obter texto:', error);
+  }
+}
+
+// Adiciona um excerto
+function addExcerpt(text, pageNumber) {
+  const excerpt = {
+    id: Date.now(),
+    text: text,
+    page: pageNumber,
+    timestamp: new Date().toISOString()
+  };
+  
+  state.excerpts.push(excerpt);
+  updateExcerptsList();
+  saveExcerpts();
+  
+  console.log('[Viewer] Excerto adicionado:', excerpt);
+}
+
+// Atualiza lista de excertos na UI
+function updateExcerptsList() {
+  elements.excerptCount.textContent = state.excerpts.length;
+  
+  if (state.excerpts.length === 0) {
+    elements.excerptsList.innerHTML = `
+      <div class="empty-state">
+        <p>Selecione texto no PDF para adicionar excertos</p>
+        <p class="hint">Use o botao "Selecionar" para ativar o modo de captura</p>
+      </div>
+    `;
+    return;
+  }
+  
+  elements.excerptsList.innerHTML = state.excerpts.map((excerpt, index) => `
+    <div class="excerpt-item" data-id="${excerpt.id}">
+      <div class="excerpt-header">
+        <span class="excerpt-page">Pagina ${excerpt.page}</span>
+        <span>#${index + 1}</span>
+      </div>
+      <div class="excerpt-text">${escapeHtml(excerpt.text.substring(0, 200))}${excerpt.text.length > 200 ? '...' : ''}</div>
+      <div class="excerpt-actions">
+        <button onclick="viewExcerpt(${excerpt.id})">Ver completo</button>
+        <button onclick="removeExcerpt(${excerpt.id})">Remover</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Funcoes globais para os botoes dos excertos
+window.viewExcerpt = (id) => {
+  const excerpt = state.excerpts.find(e => e.id === id);
+  if (excerpt) {
+    alert(`Pagina ${excerpt.page}\n\n${excerpt.text}`);
+  }
+};
+
+window.removeExcerpt = (id) => {
+  state.excerpts = state.excerpts.filter(e => e.id !== id);
+  updateExcerptsList();
+  saveExcerpts();
+};
+
+// Escapa HTML para seguranca
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Salva excertos no storage
+async function saveExcerpts() {
+  try {
+    await chrome.storage.local.set({
+      excerpts: state.excerpts,
+      pdfUrl: state.pdfUrl,
+      fileName: state.fileName
+    });
+    console.log('[Viewer] Excertos salvos');
+  } catch (error) {
+    console.error('[Viewer] Erro ao salvar excertos:', error);
+  }
+}
+
+// Carrega excertos do storage
+async function loadExcerpts() {
+  try {
+    const data = await chrome.storage.local.get(['excerpts', 'pdfUrl']);
+    if (data.excerpts && data.pdfUrl === state.pdfUrl) {
+      state.excerpts = data.excerpts;
+      updateExcerptsList();
+      console.log('[Viewer] Excertos carregados:', state.excerpts.length);
+    }
+  } catch (error) {
+    console.error('[Viewer] Erro ao carregar excertos:', error);
+  }
+}
+
+// Exporta para PDF usando pdf-lib
+async function exportToPdf() {
+  try {
+    console.log('[Viewer] Criando PDF com excertos...');
+    
+    // Cria novo documento PDF
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    // Adiciona metadados
+    pdfDoc.setTitle('Excertos - ' + state.fileName);
+    pdfDoc.setAuthor('PDF Excerpt Extractor');
+    pdfDoc.setSubject('Excertos selecionados do PDF');
+    pdfDoc.setKeywords(['excertos', 'pdf', 'fichamento']);
+    pdfDoc.setProducer('PDF Excerpt Extractor Extension');
+    pdfDoc.setCreator('PDF Excerpt Extractor');
+    
+    // Cabecalho
+    const margin = 40;
+    const pageWidth = 595; // A4
+    const pageHeight = 842;
+    
+    let yPosition = pageHeight - margin;
+    
+    // Cria paginas conforme necessario
+    let page = pdfDoc.addPage([pageWidth, pageHeight]);
+    
+    // Titulo
+    page.drawText('Excertos Selecionados', {
+      x: margin,
+      y: yPosition,
+      size: 18,
+      font: boldFont,
+      color: rgb(0.2, 0.4, 0.6)
+    });
+    yPosition -= 30;
+    
+    // Informacoes do arquivo original
+    page.drawText(`Arquivo original: ${state.fileName}`, {
+      x: margin,
+      y: yPosition,
+      size: 10,
+      font: font,
+      color: rgb(0.4, 0.4, 0.4)
+    });
+    yPosition -= 20;
+    
+    page.drawText(`Total de excertos: ${state.excerpts.length}`, {
+      x: margin,
+      y: yPosition,
+      size: 10,
+      font: font,
+      color: rgb(0.4, 0.4, 0.4)
+    });
+    yPosition -= 20;
+    
+    page.drawText(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, {
+      x: margin,
+      y: yPosition,
+      size: 10,
+      font: font,
+      color: rgb(0.4, 0.4, 0.4)
+    });
+    yPosition -= 40;
+    
+    // Linha separadora
+    page.drawLine({
+      start: { x: margin, y: yPosition },
+      end: { x: pageWidth - margin, y: yPosition },
+      thickness: 1,
+      color: rgb(0.8, 0.8, 0.8)
+    });
+    yPosition -= 30;
+    
+    // Adiciona cada excerto
+    state.excerpts.forEach((excerpt, index) => {
+      // Verifica se precisa de nova pagina
+      if (yPosition < 100) {
+        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        yPosition = pageHeight - margin;
+      }
+      
+      // Numero e pagina do excerto
+      const excerptHeader = `Excerto #${index + 1} (Pagina ${excerpt.page})`;
+      page.drawText(excerptHeader, {
+        x: margin,
+        y: yPosition,
+        size: 11,
+        font: boldFont,
+        color: rgb(0.2, 0.4, 0.6)
+      });
+      yPosition -= 20;
+      
+      // Texto do excerto (com quebra de linha automatica)
+      const textLines = splitTextIntoLines(excerpt.text, pageWidth - (margin * 2), 10, font);
+      
+      textLines.forEach(line => {
+        if (yPosition < 50) {
+          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          yPosition = pageHeight - margin;
+        }
+        
+        page.drawText(line, {
+          x: margin,
+          y: yPosition,
+          size: 10,
+          font: font,
+          color: rgb(0.2, 0.2, 0.2)
+        });
+        yPosition -= 15;
+      });
+      
+      yPosition -= 15; // Espaco entre excertos
+      
+      // Linha separadora entre excertos
+      if (index < state.excerpts.length - 1) {
+        page.drawLine({
+          start: { x: margin, y: yPosition },
+          end: { x: pageWidth - margin, y: yPosition },
+          thickness: 0.5,
+          color: rgb(0.9, 0.9, 0.9)
+        });
+        yPosition -= 20;
+      }
+    });
+    
+    // Serializa PDF
+    const pdfBytes = await pdfDoc.save();
+    
+    // Download do PDF
+    downloadFile(pdfBytes, `excertos-${state.fileName.replace('.pdf', '')}.pdf`, 'application/pdf');
+    
+    console.log('[Viewer] PDF exportado com sucesso');
+    
+    // Notifica background script
+    chrome.runtime.sendMessage({
+      action: 'excerptsReady',
+      excerpts: state.excerpts
+    });
+    
+  } catch (error) {
+    console.error('[Viewer] Erro ao exportar PDF:', error);
+    alert('Erro ao exportar PDF: ' + error.message);
+  }
+}
+
+// Exporta para TXT
+function exportToTxt() {
+  let content = `EXCERTOS SELECIONADOS\n`;
+  content += `Arquivo original: ${state.fileName}\n`;
+  content += `Total de excertos: ${state.excerpts.length}\n`;
+  content += `Gerado em: ${new Date().toLocaleString('pt-BR')}\n`;
+  content += `\n${'='.repeat(60)}\n\n`;
+  
+  state.excerpts.forEach((excerpt, index) => {
+    content += `Excerto #${index + 1} (Pagina ${excerpt.page})\n`;
+    content += `${'-'.repeat(40)}\n`;
+    content += `${excerpt.text}\n\n`;
+  });
+  
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  downloadFile(blob, `excertos-${state.fileName.replace('.pdf', '')}.txt`, 'text/plain');
+  
+  console.log('[Viewer] TXT exportado com sucesso');
+}
+
+// Divide texto em linhas para caber na pagina
+function splitTextIntoLines(text, maxWidth, fontSize, font) {
+  const words = text.split(' ');
+  const lines = [];
+  let currentLine = '';
+  
+  words.forEach(word => {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+    
+    if (testWidth > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  });
+  
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  
+  return lines;
+}
+
+// Faz download de arquivo
+function downloadFile(data, filename, mimeType) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  
+  URL.revokeObjectURL(url);
+}
+
+// Mostra modal de confirmacao
+function showModal(message, callback) {
+  elements.modalMessage.textContent = message;
+  elements.confirmModal.classList.add('active');
+  state.modalCallback = callback;
+}
+
+// Esconde modal
+function hideModal() {
+  elements.confirmModal.classList.remove('active');
+  state.modalCallback = null;
+}
+
+// Mostra erro
+function showError(message) {
+  elements.fileName.textContent = 'Erro: ' + message;
+  elements.fileName.style.color = '#e94560';
+}
+
+// Inicia aplicacao quando DOM estiver pronto
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+console.log('[Viewer] Script carregado');
