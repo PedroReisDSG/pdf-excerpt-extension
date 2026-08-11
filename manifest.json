@@ -27,15 +27,16 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["viewer/*", "libs/*", "icons/*"],
+      "resources": ["viewer/*", "libs/*", "icons/*", "popup/*"],
       "matches": ["<all_urls>"]
     }
   ],
   "action": {
+    "default_popup": "popup/popup.html",
     "default_icon": {
       "48": "icons/icon-48.png"
     },
-    "default_title": "PDF Excerpt Extractor"
+    "default_title": "PDF Excerpt Extractor - Clique para ver instrucoes"
   },
   "icons": {
     "48": "icons/icon-48.png"
