@@ -37,70 +37,75 @@ const elements = {
 // Inicializacao
 async function init() {
   console.log('[Viewer] Inicializando...');
-  
+
   // Configura PDF.js worker
   pdfjsLib.GlobalWorkerOptions.workerSrc = '../libs/pdf.worker.min.js';
-  
+
   // Obtem URL do PDF da query string
   const params = new URLSearchParams(window.location.search);
   state.pdfUrl = params.get('pdf');
-  
+
   if (!state.pdfUrl) {
     showError('Nenhum PDF especificado');
+    console.error('[Viewer] Nenhum parametro ?pdf= na URL do viewer');
     return;
   }
-  
+
   // Extrai nome do arquivo
   state.fileName = state.pdfUrl.split('/').pop().split('?')[0].split('#')[0];
   elements.fileName.textContent = state.fileName;
-  
+
   console.log('[Viewer] Carregando PDF:', state.pdfUrl);
-  
+
   try {
-    // Carrega o PDF
-    const loadingTask = pdfjsLib.getDocument(state.pdfUrl);
+    let loadingTask;
+
+    if (state.pdfUrl.startsWith('file:')) {
+      console.warn('[Viewer] PDF local detectado. Carregamento direto via URL pode falhar.');
+      showError('PDF local nao pode ser carregado diretamente no viewer. Abra o PDF normalmente no navegador e use a extensao a partir do visualizador nativo.');
+      return;
+    } else {
+      loadingTask = pdfjsLib.getDocument(state.pdfUrl);
+    }
+
     state.pdfDoc = await loadingTask.promise;
     state.totalPages = state.pdfDoc.numPages;
-    
+
     console.log('[Viewer] PDF carregado:', state.totalPages, 'paginas');
-    
-    // Atualiza UI
+
     elements.pageCount.textContent = state.totalPages;
     elements.pageInput.max = state.totalPages;
-    
-    // Renderiza primeira pagina
+
     await renderPage(1);
-    
-    // Configura event listeners
     setupEventListeners();
-    
+
   } catch (error) {
     console.error('[Viewer] Erro ao carregar PDF:', error);
-    showError('Erro ao carregar PDF: ' + error.message);
+    showError('Erro ao carregar PDF: ' + (error.message || error));
   }
 }
 
 // Renderiza uma pagina do PDF
 async function renderPage(pageNum) {
   if (!state.pdfDoc) return;
-  
+
   const page = await state.pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale: state.scale });
-  
+
   elements.canvas.height = viewport.height;
   elements.canvas.width = viewport.width;
-  
+
   const renderContext = {
     canvasContext: elements.ctx,
     viewport: viewport
   };
-  
+
   await page.render(renderContext).promise;
-  
+
   state.currentPage = pageNum;
   elements.pageNumber.textContent = pageNum;
   elements.pageInput.value = pageNum;
-  
+
   console.log('[Viewer] Pagina', pageNum, 'renderizada');
 }
 
@@ -112,13 +117,13 @@ function setupEventListeners() {
       renderPage(state.currentPage - 1);
     }
   });
-  
+
   elements.nextPage.addEventListener('click', () => {
     if (state.currentPage < state.totalPages) {
       renderPage(state.currentPage + 1);
     }
   });
-  
+
   elements.pageInput.addEventListener('change', (e) => {
     const page = parseInt(e.target.value);
     if (page >= 1 && page <= state.totalPages) {
@@ -127,55 +132,55 @@ function setupEventListeners() {
       e.target.value = state.currentPage;
     }
   });
-  
+
   // Teclas de atalho
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
-    
+
     if (e.key === 'ArrowLeft') {
       elements.prevPage.click();
     } else if (e.key === 'ArrowRight') {
       elements.nextPage.click();
     }
   });
-  
+
   // Modo de selecao
   elements.selectMode.addEventListener('click', toggleSelectMode);
-  
+
   // Captura selecao de texto
   elements.canvas.addEventListener('mouseup', handleTextSelection);
-  
+
   // Limpar excertos
   elements.clearSelections.addEventListener('click', () => {
     if (state.excerpts.length === 0) return;
-    
+
     showModal('Tem certeza que deseja limpar todos os excertos?', () => {
       state.excerpts = [];
       updateExcerptsList();
       saveExcerpts();
     });
   });
-  
+
   // Exportar PDF
   elements.exportPdf.addEventListener('click', () => {
     if (state.excerpts.length === 0) {
       alert('Nenhum excerto selecionado para exportar');
       return;
     }
-    
+
     showModal('Exportar excertos para PDF?', exportToPdf);
   });
-  
+
   // Exportar TXT
   elements.exportTxt.addEventListener('click', () => {
     if (state.excerpts.length === 0) {
       alert('Nenhum excerto selecionado para exportar');
       return;
     }
-    
+
     exportToTxt();
   });
-  
+
   // Modal
   elements.modalCancel.addEventListener('click', hideModal);
   elements.modalConfirm.addEventListener('click', () => {
@@ -184,7 +189,7 @@ function setupEventListeners() {
       state.modalCallback();
     }
   });
-  
+
   // Carrega excertos salvos
   loadExcerpts();
 }
@@ -194,19 +199,19 @@ function toggleSelectMode() {
   state.selectMode = !state.selectMode;
   elements.selectMode.classList.toggle('btn-primary', state.selectMode);
   elements.selectMode.textContent = state.selectMode ? 'Selecionando' : 'Selecionar';
-  
+
   console.log('[Viewer] Modo selecao:', state.selectMode);
 }
 
 // Manipula selecao de texto no canvas
 async function handleTextSelection(e) {
   if (!state.selectMode || !state.pdfDoc) return;
-  
+
   try {
     // Obtem texto da pagina atual
     const page = await state.pdfDoc.getPage(state.currentPage);
     const textContent = await page.getTextContent();
-    
+
     // Filtra itens de texto
     let selectedText = '';
     textContent.items.forEach(item => {
@@ -214,11 +219,11 @@ async function handleTextSelection(e) {
         selectedText += item.str + ' ';
       }
     });
-    
+
     if (selectedText.trim()) {
       addExcerpt(selectedText.trim(), state.currentPage);
     }
-    
+
   } catch (error) {
     console.error('[Viewer] Erro ao obter texto:', error);
   }
@@ -232,18 +237,18 @@ function addExcerpt(text, pageNumber) {
     page: pageNumber,
     timestamp: new Date().toISOString()
   };
-  
+
   state.excerpts.push(excerpt);
   updateExcerptsList();
   saveExcerpts();
-  
+
   console.log('[Viewer] Excerto adicionado:', excerpt);
 }
 
 // Atualiza lista de excertos na UI
 function updateExcerptsList() {
   elements.excerptCount.textContent = state.excerpts.length;
-  
+
   if (state.excerpts.length === 0) {
     elements.excerptsList.innerHTML = `
       <div class="empty-state">
@@ -253,7 +258,7 @@ function updateExcerptsList() {
     `;
     return;
   }
-  
+
   elements.excerptsList.innerHTML = state.excerpts.map((excerpt, index) => `
     <div class="excerpt-item" data-id="${excerpt.id}">
       <div class="excerpt-header">
@@ -322,31 +327,25 @@ async function loadExcerpts() {
 async function exportToPdf() {
   try {
     console.log('[Viewer] Criando PDF com excertos...');
-    
-    // Cria novo documento PDF
+
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
-    // Adiciona metadados
+
     pdfDoc.setTitle('Excertos - ' + state.fileName);
     pdfDoc.setAuthor('PDF Excerpt Extractor');
     pdfDoc.setSubject('Excertos selecionados do PDF');
     pdfDoc.setKeywords(['excertos', 'pdf', 'fichamento']);
     pdfDoc.setProducer('PDF Excerpt Extractor Extension');
     pdfDoc.setCreator('PDF Excerpt Extractor');
-    
-    // Cabecalho
+
     const margin = 40;
-    const pageWidth = 595; // A4
+    const pageWidth = 595;
     const pageHeight = 842;
-    
+
     let yPosition = pageHeight - margin;
-    
-    // Cria paginas conforme necessario
     let page = pdfDoc.addPage([pageWidth, pageHeight]);
-    
-    // Titulo
+
     page.drawText('Excertos Selecionados', {
       x: margin,
       y: yPosition,
@@ -355,8 +354,7 @@ async function exportToPdf() {
       color: rgb(0.2, 0.4, 0.6)
     });
     yPosition -= 30;
-    
-    // Informacoes do arquivo original
+
     page.drawText(`Arquivo original: ${state.fileName}`, {
       x: margin,
       y: yPosition,
@@ -365,7 +363,7 @@ async function exportToPdf() {
       color: rgb(0.4, 0.4, 0.4)
     });
     yPosition -= 20;
-    
+
     page.drawText(`Total de excertos: ${state.excerpts.length}`, {
       x: margin,
       y: yPosition,
@@ -374,7 +372,7 @@ async function exportToPdf() {
       color: rgb(0.4, 0.4, 0.4)
     });
     yPosition -= 20;
-    
+
     page.drawText(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, {
       x: margin,
       y: yPosition,
@@ -383,8 +381,7 @@ async function exportToPdf() {
       color: rgb(0.4, 0.4, 0.4)
     });
     yPosition -= 40;
-    
-    // Linha separadora
+
     page.drawLine({
       start: { x: margin, y: yPosition },
       end: { x: pageWidth - margin, y: yPosition },
@@ -392,16 +389,13 @@ async function exportToPdf() {
       color: rgb(0.8, 0.8, 0.8)
     });
     yPosition -= 30;
-    
-    // Adiciona cada excerto
+
     state.excerpts.forEach((excerpt, index) => {
-      // Verifica se precisa de nova pagina
       if (yPosition < 100) {
         page = pdfDoc.addPage([pageWidth, pageHeight]);
         yPosition = pageHeight - margin;
       }
-      
-      // Numero e pagina do excerto
+
       const excerptHeader = `Excerto #${index + 1} (Pagina ${excerpt.page})`;
       page.drawText(excerptHeader, {
         x: margin,
@@ -411,16 +405,15 @@ async function exportToPdf() {
         color: rgb(0.2, 0.4, 0.6)
       });
       yPosition -= 20;
-      
-      // Texto do excerto (com quebra de linha automatica)
+
       const textLines = splitTextIntoLines(excerpt.text, pageWidth - (margin * 2), 10, font);
-      
+
       textLines.forEach(line => {
         if (yPosition < 50) {
           page = pdfDoc.addPage([pageWidth, pageHeight]);
           yPosition = pageHeight - margin;
         }
-        
+
         page.drawText(line, {
           x: margin,
           y: yPosition,
@@ -430,10 +423,9 @@ async function exportToPdf() {
         });
         yPosition -= 15;
       });
-      
-      yPosition -= 15; // Espaco entre excertos
-      
-      // Linha separadora entre excertos
+
+      yPosition -= 15;
+
       if (index < state.excerpts.length - 1) {
         page.drawLine({
           start: { x: margin, y: yPosition },
@@ -444,21 +436,18 @@ async function exportToPdf() {
         yPosition -= 20;
       }
     });
-    
-    // Serializa PDF
+
     const pdfBytes = await pdfDoc.save();
-    
-    // Download do PDF
+
     downloadFile(pdfBytes, `excertos-${state.fileName.replace('.pdf', '')}.pdf`, 'application/pdf');
-    
+
     console.log('[Viewer] PDF exportado com sucesso');
-    
-    // Notifica background script
+
     chrome.runtime.sendMessage({
       action: 'excerptsReady',
       excerpts: state.excerpts
     });
-    
+
   } catch (error) {
     console.error('[Viewer] Erro ao exportar PDF:', error);
     alert('Erro ao exportar PDF: ' + error.message);
@@ -472,16 +461,16 @@ function exportToTxt() {
   content += `Total de excertos: ${state.excerpts.length}\n`;
   content += `Gerado em: ${new Date().toLocaleString('pt-BR')}\n`;
   content += `\n${'='.repeat(60)}\n\n`;
-  
+
   state.excerpts.forEach((excerpt, index) => {
     content += `Excerto #${index + 1} (Pagina ${excerpt.page})\n`;
     content += `${'-'.repeat(40)}\n`;
     content += `${excerpt.text}\n\n`;
   });
-  
+
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   downloadFile(blob, `excertos-${state.fileName.replace('.pdf', '')}.txt`, 'text/plain');
-  
+
   console.log('[Viewer] TXT exportado com sucesso');
 }
 
@@ -490,11 +479,11 @@ function splitTextIntoLines(text, maxWidth, fontSize, font) {
   const words = text.split(' ');
   const lines = [];
   let currentLine = '';
-  
+
   words.forEach(word => {
     const testLine = currentLine ? `${currentLine} ${word}` : word;
     const testWidth = font.widthOfTextAtSize(testLine, fontSize);
-    
+
     if (testWidth > maxWidth && currentLine) {
       lines.push(currentLine);
       currentLine = word;
@@ -502,11 +491,11 @@ function splitTextIntoLines(text, maxWidth, fontSize, font) {
       currentLine = testLine;
     }
   });
-  
+
   if (currentLine) {
     lines.push(currentLine);
   }
-  
+
   return lines;
 }
 
@@ -514,14 +503,14 @@ function splitTextIntoLines(text, maxWidth, fontSize, font) {
 function downloadFile(data, filename, mimeType) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
   const url = URL.createObjectURL(blob);
-  
+
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  
+
   URL.revokeObjectURL(url);
 }
 
