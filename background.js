@@ -1,5 +1,5 @@
 // background.js - Service Worker para gerenciar a extensao
-// v1.2.0: PDFs locais nao sao redirecionados automaticamente - o usuario usa o popup
+// v1.3.0: PDFs locais nao sao redirecionados automaticamente - o usuario usa o popup
 
 const EXCLUDED_PATTERNS = [
   'chrome-extension://',
@@ -81,4 +81,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-console.log('[PDF Excerpt] Background service worker iniciado (v1.2.0)');
+console.log('[PDF Excerpt] Background service worker iniciado (v1.3.0)');

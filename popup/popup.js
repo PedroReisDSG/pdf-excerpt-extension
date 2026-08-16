@@ -1,5 +1,5 @@
 // popup.js - Script para o popup da extensao
-// v1.2.0: usa mensagem direta para passar PDF local ao viewer, sem depender de chrome.storage
+// v1.3.0: usa chrome.runtime.sendMessage para enviar PDF local ao viewer (pagina da extensao)
 
 console.log('[Popup] Popup carregado');
 
@@ -56,27 +56,19 @@ if (openBtn && fileInput) {
       const viewerUrl = chrome.runtime.getURL('viewer/viewer.html') + '?source=local';
       const tab = await chrome.tabs.create({ url: viewerUrl });
 
-      // Espera a aba carregar e depois envia os dados via mensagem
+      // Espera a aba carregar e depois envia os dados via runtime.sendMessage
+      // runtime.sendMessage funciona para paginas de extensao (viewer.html), nao apenas content scripts
       setTimeout(async () => {
         try {
-          await chrome.tabs.sendMessage(tab.id, {
+          await chrome.runtime.sendMessage({
             action: 'loadLocalPdf',
             pdfData: base64Data,
             fileName: file.name
           });
-          console.log('[Popup] Dados do PDF enviados para a aba do viewer');
+          console.log('[Popup] Dados do PDF enviados via runtime.sendMessage');
         } catch (msgError) {
-          console.error('[Popup] Erro ao enviar mensagem para viewer:', msgError);
-          // Fallback: tenta storage como ultimo recurso
-          try {
-            await chrome.storage.local.set({
-              localPdfData: base64Data,
-              localPdfName: file.name
-            });
-            console.log('[Popup] Fallback: dados salvos no storage');
-          } catch (storageError) {
-            console.error('[Popup] Fallback tambem falhou:', storageError);
-          }
+          console.error('[Popup] Erro ao enviar mensagem:', msgError);
+          setStatus('Erro ao abrir o PDF no visualizador. Tente novamente.', true);
         }
       }, 1000);
 
@@ -93,4 +85,4 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('[Popup] DOM carregado');
 });
 
-console.log('[Popup] PDF Excerpt Extractor - Popup inicializado (v1.2.0)');
+console.log('[Popup] PDF Excerpt Extractor - Popup inicializado (v1.3.0)');

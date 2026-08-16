@@ -1,5 +1,5 @@
 // viewer.js - Logica principal do visualizador de PDF
-// v1.2.0: suporte a PDF local via mensagem direta (chrome.tabs.sendMessage) alem de URL remota
+// v1.3.0: suporte a PDF local via chrome.runtime.sendMessage (pagina da extensao)
 
 const state = {
   pdfDoc: null,
@@ -10,7 +10,8 @@ const state = {
   selectMode: false,
   pdfUrl: '',
   fileName: '',
-  isLocalSource: false
+  isLocalSource: false,
+  localPdfLoaded: false
 };
 
 const elements = {
@@ -49,7 +50,7 @@ function base64ToUint8Array(base64) {
 // Escuta mensagem do popup com dados do PDF local
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'loadLocalPdf' && message.pdfData) {
-    console.log('[Viewer] Recebendo PDF local via mensagem:', message.fileName, `(${message.pdfData.length} chars base64)`);
+    console.log('[Viewer] Recebendo PDF local via runtime.sendMessage:', message.fileName, `(${message.pdfData.length} chars base64)`);
 
     state.fileName = message.fileName || 'documento-local.pdf';
     elements.fileName.textContent = state.fileName;
@@ -94,8 +95,14 @@ async function init() {
   state.isLocalSource = source === 'local';
 
   if (state.isLocalSource) {
-    console.log('[Viewer] Aguardando dados do PDF local via mensagem...');
+    console.log('[Viewer] Aguardando dados do PDF local via runtime.sendMessage...');
     // Nao faz nada aqui - espera a mensagem do popup
+    // Adiciona timeout de seguranca: se nada chegar em 5s, mostra erro
+    setTimeout(() => {
+      if (!state.pdfDoc) {
+        showError('Tempo esgotado aguardando PDF local. Feche esta aba e tente novamente pelo popup da extensao.');
+      }
+    }, 5000);
     return;
   }
 
@@ -571,4 +578,4 @@ if (document.readyState === 'loading') {
   init();
 }
 
-console.log('[Viewer] Script carregado (v1.2.0 - suporte a PDF local via mensagem)');
+console.log('[Viewer] Script carregado (v1.3.0 - suporte a PDF local via runtime.sendMessage)');
