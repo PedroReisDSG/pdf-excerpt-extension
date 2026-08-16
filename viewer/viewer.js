@@ -1,5 +1,5 @@
 // viewer.js - Logica principal do visualizador de PDF
-// v1.1.0: suporte a PDF local via chrome.storage (base64) alem de PDF remoto via URL
+// v1.2.0: suporte a PDF local via mensagem direta (chrome.tabs.sendMessage) alem de URL remota
 
 const state = {
   pdfDoc: null,
@@ -46,26 +46,41 @@ function base64ToUint8Array(base64) {
   return bytes;
 }
 
-async function loadLocalPdf() {
-  console.log('[Viewer] Carregando PDF local a partir do storage...');
+// Escuta mensagem do popup com dados do PDF local
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'loadLocalPdf' && message.pdfData) {
+    console.log('[Viewer] Recebendo PDF local via mensagem:', message.fileName, `(${message.pdfData.length} chars base64)`);
 
-  const data = await chrome.storage.local.get(['localPdfData', 'localPdfName']);
+    state.fileName = message.fileName || 'documento-local.pdf';
+    elements.fileName.textContent = state.fileName;
 
-  if (!data.localPdfData) {
-    showError('Nenhum PDF local encontrado. Use o botao "Escolher arquivo PDF" no popup da extensao.');
-    return null;
+    const pdfBytes = base64ToUint8Array(message.pdfData);
+    console.log('[Viewer] PDF local decodificado:', pdfBytes.length, 'bytes');
+
+    loadPdfFromBytes(pdfBytes);
+    sendResponse({ success: true });
+    return true;
   }
+});
 
-  state.fileName = data.localPdfName || 'documento-local.pdf';
-  elements.fileName.textContent = state.fileName;
+async function loadPdfFromBytes(pdfBytes) {
+  try {
+    const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+    state.pdfDoc = await loadingTask.promise;
+    state.totalPages = state.pdfDoc.numPages;
 
-  const pdfBytes = base64ToUint8Array(data.localPdfData);
+    console.log('[Viewer] PDF local carregado:', state.totalPages, 'paginas');
 
-  await chrome.storage.local.remove(['localPdfData']);
+    elements.pageCount.textContent = state.totalPages;
+    elements.pageInput.max = state.totalPages;
 
-  console.log('[Viewer] PDF local carregado do storage:', state.fileName, `(${pdfBytes.length} bytes)`);
+    await renderPage(1);
+    setupEventListeners();
 
-  return pdfBytes;
+  } catch (error) {
+    console.error('[Viewer] Erro ao carregar PDF local:', error);
+    showError('Erro ao carregar PDF local: ' + (error.message || error));
+  }
 }
 
 async function init() {
@@ -78,41 +93,38 @@ async function init() {
 
   state.isLocalSource = source === 'local';
 
+  if (state.isLocalSource) {
+    console.log('[Viewer] Aguardando dados do PDF local via mensagem...');
+    // Nao faz nada aqui - espera a mensagem do popup
+    return;
+  }
+
+  // Fluxo remoto (http/https)
+  state.pdfUrl = params.get('pdf');
+
+  if (!state.pdfUrl) {
+    showError('Nenhum PDF especificado');
+    console.error('[Viewer] Nenhum parametro ?pdf= na URL do viewer');
+    return;
+  }
+
+  if (state.pdfUrl.startsWith('file:')) {
+    console.warn('[Viewer] PDF local via URL file:// detectado. Use o botao "Escolher arquivo PDF" no popup.');
+    showError('PDFs locais devem ser abertos pelo botao "Escolher arquivo PDF" no popup da extensao.');
+    return;
+  }
+
+  state.fileName = state.pdfUrl.split('/').pop().split('?')[0].split('#')[0];
+  elements.fileName.textContent = state.fileName;
+
+  console.log('[Viewer] Carregando PDF remoto:', state.pdfUrl);
+
   try {
-    let loadingTask;
-
-    if (state.isLocalSource) {
-      const pdfBytes = await loadLocalPdf();
-      if (!pdfBytes) return;
-
-      loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
-
-    } else {
-      state.pdfUrl = params.get('pdf');
-
-      if (!state.pdfUrl) {
-        showError('Nenhum PDF especificado');
-        console.error('[Viewer] Nenhum parametro ?pdf= na URL do viewer');
-        return;
-      }
-
-      if (state.pdfUrl.startsWith('file:')) {
-        console.warn('[Viewer] PDF local via URL file:// detectado. Use o botao "Escolher arquivo PDF" no popup para abrir PDFs locais.');
-        showError('PDFs locais devem ser abertos pelo botao "Escolher arquivo PDF" no popup da extensao, nao diretamente pela URL.');
-        return;
-      }
-
-      state.fileName = state.pdfUrl.split('/').pop().split('?')[0].split('#')[0];
-      elements.fileName.textContent = state.fileName;
-
-      console.log('[Viewer] Carregando PDF remoto:', state.pdfUrl);
-      loadingTask = pdfjsLib.getDocument(state.pdfUrl);
-    }
-
+    const loadingTask = pdfjsLib.getDocument(state.pdfUrl);
     state.pdfDoc = await loadingTask.promise;
     state.totalPages = state.pdfDoc.numPages;
 
-    console.log('[Viewer] PDF carregado:', state.totalPages, 'paginas');
+    console.log('[Viewer] PDF remoto carregado:', state.totalPages, 'paginas');
 
     elements.pageCount.textContent = state.totalPages;
     elements.pageInput.max = state.totalPages;
@@ -121,7 +133,7 @@ async function init() {
     setupEventListeners();
 
   } catch (error) {
-    console.error('[Viewer] Erro ao carregar PDF:', error);
+    console.error('[Viewer] Erro ao carregar PDF remoto:', error);
     showError('Erro ao carregar PDF: ' + (error.message || error));
   }
 }
@@ -559,4 +571,4 @@ if (document.readyState === 'loading') {
   init();
 }
 
-console.log('[Viewer] Script carregado (v1.1.0 - suporte a PDF local via storage)');
+console.log('[Viewer] Script carregado (v1.2.0 - suporte a PDF local via mensagem)');

@@ -1,7 +1,5 @@
 // background.js - Service Worker para gerenciar a extensao
-// Detecta PDFs remotos (http/https) e redireciona para o visualizador proprio
-// PDFs locais (file://) NAO sao redirecionados automaticamente - o usuario deve
-// usar o botao "Escolher arquivo PDF" no popup, que le o arquivo via FileReader.
+// v1.2.0: PDFs locais nao sao redirecionados automaticamente - o usuario usa o popup
 
 const EXCLUDED_PATTERNS = [
   'chrome-extension://',
@@ -83,4 +81,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-console.log('[PDF Excerpt] Background service worker iniciado (v1.1.0)');
+console.log('[PDF Excerpt] Background service worker iniciado (v1.2.0)');

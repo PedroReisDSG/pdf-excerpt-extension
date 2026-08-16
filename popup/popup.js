@@ -1,8 +1,7 @@
 // popup.js - Script para o popup da extensao
+// v1.2.0: usa mensagem direta para passar PDF local ao viewer, sem depender de chrome.storage
 
 console.log('[Popup] Popup carregado');
-
-const MAX_PDF_SIZE_BYTES = 8 * 1024 * 1024; // 8MB - limite pratico para chrome.storage.local
 
 const fileInput = document.getElementById('localPdfInput');
 const openBtn = document.getElementById('openLocalPdfBtn');
@@ -43,32 +42,43 @@ if (openBtn && fileInput) {
       return;
     }
 
-    if (file.size > MAX_PDF_SIZE_BYTES) {
-      setStatus(
-        `Arquivo muito grande (${(file.size / (1024 * 1024)).toFixed(1)}MB). Limite atual: ${MAX_PDF_SIZE_BYTES / (1024 * 1024)}MB.`,
-        true
-      );
-      return;
-    }
-
     setStatus('Lendo arquivo...', false);
 
     try {
       const arrayBuffer = await file.arrayBuffer();
       const base64Data = arrayBufferToBase64(arrayBuffer);
 
-      await chrome.storage.local.set({
-        localPdfData: base64Data,
-        localPdfName: file.name,
-        localPdfTimestamp: Date.now()
-      });
-
-      console.log('[Popup] PDF local salvo no storage:', file.name, `(${arrayBuffer.byteLength} bytes)`);
+      console.log('[Popup] PDF local lido:', file.name, `(${arrayBuffer.byteLength} bytes)`);
 
       setStatus('Abrindo visualizador...', false);
 
+      // Abre a aba do viewer primeiro
       const viewerUrl = chrome.runtime.getURL('viewer/viewer.html') + '?source=local';
-      await chrome.tabs.create({ url: viewerUrl });
+      const tab = await chrome.tabs.create({ url: viewerUrl });
+
+      // Espera a aba carregar e depois envia os dados via mensagem
+      setTimeout(async () => {
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            action: 'loadLocalPdf',
+            pdfData: base64Data,
+            fileName: file.name
+          });
+          console.log('[Popup] Dados do PDF enviados para a aba do viewer');
+        } catch (msgError) {
+          console.error('[Popup] Erro ao enviar mensagem para viewer:', msgError);
+          // Fallback: tenta storage como ultimo recurso
+          try {
+            await chrome.storage.local.set({
+              localPdfData: base64Data,
+              localPdfName: file.name
+            });
+            console.log('[Popup] Fallback: dados salvos no storage');
+          } catch (storageError) {
+            console.error('[Popup] Fallback tambem falhou:', storageError);
+          }
+        }
+      }, 1000);
 
       window.close();
 
@@ -83,4 +93,4 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('[Popup] DOM carregado');
 });
 
-console.log('[Popup] PDF Excerpt Extractor - Popup inicializado');
+console.log('[Popup] PDF Excerpt Extractor - Popup inicializado (v1.2.0)');

@@ -1,5 +1,5 @@
 // content.js - Content Script para interceptar PDFs
-// Ajustado para nao quebrar PDFs locais (file://)
+// v1.2.0: PDFs locais nao sao substituidos - o usuario usa o popup para abrir PDFs locais
 
 (function() {
   'use strict';

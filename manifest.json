@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PDF Excerpt Extractor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Visualizador de PDF com PDF.js que captura selecoes de texto e gera um novo PDF com os trechos destacados para fichamento academico. Suporta PDFs online e locais.",
   "author": "Desenvolvedor Web",
   "homepage_url": "https://github.com/PedroReisDSG/pdf-excerpt-extension",
@@ -9,7 +9,8 @@
     "storage",
     "activeTab",
     "downloads",
-    "webNavigation"
+    "webNavigation",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
