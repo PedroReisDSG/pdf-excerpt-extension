@@ -18,14 +18,11 @@
 
   const isLocalFile = url.startsWith('file:');
 
-  // Para PDF local, nao substituimos o visualizador nativo
   if (isLocalFile) {
-    console.log('[PDF Excerpt] PDF local detectado. Nao vou substituir o visualizador nativo. URL:', url);
-    // Futuro: podemos injetar um botao aqui para enviar o PDF para o viewer da extensao
+    console.log('[PDF Excerpt] PDF local detectado. Nao vou substituir o visualizador nativo. Use o popup da extensao para abrir PDFs locais no viewer proprio. URL:', url);
     return;
   }
 
-  // Para PDFs remotos (http/https) mantemos o comportamento atual
   console.log('[PDF Excerpt] PDF remoto detectado pelo content script. Preparando redirecionamento para o viewer... URL:', url);
 
   document.documentElement.innerHTML = '';
@@ -55,7 +52,6 @@
 
   document.body.appendChild(loadingDiv);
 
-  // Redireciona para o visualizador da extensao
   setTimeout(() => {
     const viewerUrl = chrome.runtime.getURL('viewer/viewer.html') +
                      '?pdf=' + encodeURIComponent(window.location.href);

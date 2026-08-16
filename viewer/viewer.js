@@ -1,6 +1,6 @@
 // viewer.js - Logica principal do visualizador de PDF
+// v1.1.0: suporte a PDF local via chrome.storage (base64) alem de PDF remoto via URL
 
-// Estado da aplicacao
 const state = {
   pdfDoc: null,
   currentPage: 1,
@@ -9,10 +9,10 @@ const state = {
   excerpts: [],
   selectMode: false,
   pdfUrl: '',
-  fileName: ''
+  fileName: '',
+  isLocalSource: false
 };
 
-// Elementos do DOM
 const elements = {
   canvas: document.getElementById('pdfCanvas'),
   ctx: document.getElementById('pdfCanvas').getContext('2d'),
@@ -34,37 +34,78 @@ const elements = {
   modalConfirm: document.getElementById('modalConfirm')
 };
 
-// Inicializacao
+function base64ToUint8Array(base64) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+async function loadLocalPdf() {
+  console.log('[Viewer] Carregando PDF local a partir do storage...');
+
+  const data = await chrome.storage.local.get(['localPdfData', 'localPdfName']);
+
+  if (!data.localPdfData) {
+    showError('Nenhum PDF local encontrado. Use o botao "Escolher arquivo PDF" no popup da extensao.');
+    return null;
+  }
+
+  state.fileName = data.localPdfName || 'documento-local.pdf';
+  elements.fileName.textContent = state.fileName;
+
+  const pdfBytes = base64ToUint8Array(data.localPdfData);
+
+  await chrome.storage.local.remove(['localPdfData']);
+
+  console.log('[Viewer] PDF local carregado do storage:', state.fileName, `(${pdfBytes.length} bytes)`);
+
+  return pdfBytes;
+}
+
 async function init() {
   console.log('[Viewer] Inicializando...');
 
-  // Configura PDF.js worker
   pdfjsLib.GlobalWorkerOptions.workerSrc = '../libs/pdf.worker.min.js';
 
-  // Obtem URL do PDF da query string
   const params = new URLSearchParams(window.location.search);
-  state.pdfUrl = params.get('pdf');
+  const source = params.get('source');
 
-  if (!state.pdfUrl) {
-    showError('Nenhum PDF especificado');
-    console.error('[Viewer] Nenhum parametro ?pdf= na URL do viewer');
-    return;
-  }
-
-  // Extrai nome do arquivo
-  state.fileName = state.pdfUrl.split('/').pop().split('?')[0].split('#')[0];
-  elements.fileName.textContent = state.fileName;
-
-  console.log('[Viewer] Carregando PDF:', state.pdfUrl);
+  state.isLocalSource = source === 'local';
 
   try {
     let loadingTask;
 
-    if (state.pdfUrl.startsWith('file:')) {
-      console.warn('[Viewer] PDF local detectado. Carregamento direto via URL pode falhar.');
-      showError('PDF local nao pode ser carregado diretamente no viewer. Abra o PDF normalmente no navegador e use a extensao a partir do visualizador nativo.');
-      return;
+    if (state.isLocalSource) {
+      const pdfBytes = await loadLocalPdf();
+      if (!pdfBytes) return;
+
+      loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+
     } else {
+      state.pdfUrl = params.get('pdf');
+
+      if (!state.pdfUrl) {
+        showError('Nenhum PDF especificado');
+        console.error('[Viewer] Nenhum parametro ?pdf= na URL do viewer');
+        return;
+      }
+
+      if (state.pdfUrl.startsWith('file:')) {
+        console.warn('[Viewer] PDF local via URL file:// detectado. Use o botao "Escolher arquivo PDF" no popup para abrir PDFs locais.');
+        showError('PDFs locais devem ser abertos pelo botao "Escolher arquivo PDF" no popup da extensao, nao diretamente pela URL.');
+        return;
+      }
+
+      state.fileName = state.pdfUrl.split('/').pop().split('?')[0].split('#')[0];
+      elements.fileName.textContent = state.fileName;
+
+      console.log('[Viewer] Carregando PDF remoto:', state.pdfUrl);
       loadingTask = pdfjsLib.getDocument(state.pdfUrl);
     }
 
@@ -85,7 +126,6 @@ async function init() {
   }
 }
 
-// Renderiza uma pagina do PDF
 async function renderPage(pageNum) {
   if (!state.pdfDoc) return;
 
@@ -109,9 +149,7 @@ async function renderPage(pageNum) {
   console.log('[Viewer] Pagina', pageNum, 'renderizada');
 }
 
-// Configura event listeners
 function setupEventListeners() {
-  // Navegacao de paginas
   elements.prevPage.addEventListener('click', () => {
     if (state.currentPage > 1) {
       renderPage(state.currentPage - 1);
@@ -133,7 +171,6 @@ function setupEventListeners() {
     }
   });
 
-  // Teclas de atalho
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
 
@@ -144,13 +181,9 @@ function setupEventListeners() {
     }
   });
 
-  // Modo de selecao
   elements.selectMode.addEventListener('click', toggleSelectMode);
-
-  // Captura selecao de texto
   elements.canvas.addEventListener('mouseup', handleTextSelection);
 
-  // Limpar excertos
   elements.clearSelections.addEventListener('click', () => {
     if (state.excerpts.length === 0) return;
 
@@ -161,7 +194,6 @@ function setupEventListeners() {
     });
   });
 
-  // Exportar PDF
   elements.exportPdf.addEventListener('click', () => {
     if (state.excerpts.length === 0) {
       alert('Nenhum excerto selecionado para exportar');
@@ -171,7 +203,6 @@ function setupEventListeners() {
     showModal('Exportar excertos para PDF?', exportToPdf);
   });
 
-  // Exportar TXT
   elements.exportTxt.addEventListener('click', () => {
     if (state.excerpts.length === 0) {
       alert('Nenhum excerto selecionado para exportar');
@@ -181,7 +212,6 @@ function setupEventListeners() {
     exportToTxt();
   });
 
-  // Modal
   elements.modalCancel.addEventListener('click', hideModal);
   elements.modalConfirm.addEventListener('click', () => {
     hideModal();
@@ -190,11 +220,9 @@ function setupEventListeners() {
     }
   });
 
-  // Carrega excertos salvos
   loadExcerpts();
 }
 
-// Alterna modo de selecao
 function toggleSelectMode() {
   state.selectMode = !state.selectMode;
   elements.selectMode.classList.toggle('btn-primary', state.selectMode);
@@ -203,16 +231,13 @@ function toggleSelectMode() {
   console.log('[Viewer] Modo selecao:', state.selectMode);
 }
 
-// Manipula selecao de texto no canvas
 async function handleTextSelection(e) {
   if (!state.selectMode || !state.pdfDoc) return;
 
   try {
-    // Obtem texto da pagina atual
     const page = await state.pdfDoc.getPage(state.currentPage);
     const textContent = await page.getTextContent();
 
-    // Filtra itens de texto
     let selectedText = '';
     textContent.items.forEach(item => {
       if (item.str && item.str.trim()) {
@@ -229,7 +254,6 @@ async function handleTextSelection(e) {
   }
 }
 
-// Adiciona um excerto
 function addExcerpt(text, pageNumber) {
   const excerpt = {
     id: Date.now(),
@@ -245,7 +269,6 @@ function addExcerpt(text, pageNumber) {
   console.log('[Viewer] Excerto adicionado:', excerpt);
 }
 
-// Atualiza lista de excertos na UI
 function updateExcerptsList() {
   elements.excerptCount.textContent = state.excerpts.length;
 
@@ -274,7 +297,6 @@ function updateExcerptsList() {
   `).join('');
 }
 
-// Funcoes globais para os botoes dos excertos
 window.viewExcerpt = (id) => {
   const excerpt = state.excerpts.find(e => e.id === id);
   if (excerpt) {
@@ -288,19 +310,23 @@ window.removeExcerpt = (id) => {
   saveExcerpts();
 };
 
-// Escapa HTML para seguranca
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
-// Salva excertos no storage
+function getExcerptsStorageKey() {
+  return state.isLocalSource ? `local:${state.fileName}` : state.pdfUrl;
+}
+
 async function saveExcerpts() {
   try {
+    const key = getExcerptsStorageKey();
+
     await chrome.storage.local.set({
       excerpts: state.excerpts,
-      pdfUrl: state.pdfUrl,
+      excerptsKey: key,
       fileName: state.fileName
     });
     console.log('[Viewer] Excertos salvos');
@@ -309,11 +335,12 @@ async function saveExcerpts() {
   }
 }
 
-// Carrega excertos do storage
 async function loadExcerpts() {
   try {
-    const data = await chrome.storage.local.get(['excerpts', 'pdfUrl']);
-    if (data.excerpts && data.pdfUrl === state.pdfUrl) {
+    const key = getExcerptsStorageKey();
+    const data = await chrome.storage.local.get(['excerpts', 'excerptsKey']);
+
+    if (data.excerpts && data.excerptsKey === key) {
       state.excerpts = data.excerpts;
       updateExcerptsList();
       console.log('[Viewer] Excertos carregados:', state.excerpts.length);
@@ -323,7 +350,6 @@ async function loadExcerpts() {
   }
 }
 
-// Exporta para PDF usando pdf-lib
 async function exportToPdf() {
   try {
     console.log('[Viewer] Criando PDF com excertos...');
@@ -454,7 +480,6 @@ async function exportToPdf() {
   }
 }
 
-// Exporta para TXT
 function exportToTxt() {
   let content = `EXCERTOS SELECIONADOS\n`;
   content += `Arquivo original: ${state.fileName}\n`;
@@ -474,7 +499,6 @@ function exportToTxt() {
   console.log('[Viewer] TXT exportado com sucesso');
 }
 
-// Divide texto em linhas para caber na pagina
 function splitTextIntoLines(text, maxWidth, fontSize, font) {
   const words = text.split(' ');
   const lines = [];
@@ -499,7 +523,6 @@ function splitTextIntoLines(text, maxWidth, fontSize, font) {
   return lines;
 }
 
-// Faz download de arquivo
 function downloadFile(data, filename, mimeType) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -514,30 +537,26 @@ function downloadFile(data, filename, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-// Mostra modal de confirmacao
 function showModal(message, callback) {
   elements.modalMessage.textContent = message;
   elements.confirmModal.classList.add('active');
   state.modalCallback = callback;
 }
 
-// Esconde modal
 function hideModal() {
   elements.confirmModal.classList.remove('active');
   state.modalCallback = null;
 }
 
-// Mostra erro
 function showError(message) {
   elements.fileName.textContent = 'Erro: ' + message;
   elements.fileName.style.color = '#e94560';
 }
 
-// Inicia aplicacao quando DOM estiver pronto
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
   init();
 }
 
-console.log('[Viewer] Script carregado');
+console.log('[Viewer] Script carregado (v1.1.0 - suporte a PDF local via storage)');
